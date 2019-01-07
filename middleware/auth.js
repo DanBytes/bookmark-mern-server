@@ -1,79 +1,63 @@
 const passport = require('passport')
-const PassportJwt = require('passport-jwt')
-const JWT = require('jsonwebtoken')
 const User = require('../models/user')
-
-const jwtSecret = 'doggo123' // Should come from ENV
-const jwtAlgorithm = 'HS256'
-const jwtExpiresIn = '3h'
 
 // use static authenticate method of model in LocalStrategy
 passport.use(User.createStrategy())
 
-// Tell Passport to process JWT
-// This will happen for every incoming request
-passport.use(new PassportJwt.Strategy({
-  jwtFromRequest: PassportJwt.ExtractJwt.fromAuthHeaderAsBearerToken(),
-  secretOrKey: jwtSecret,
-  algorithms: [jwtAlgorithm]
-}, (payload, done) => {
-  User.findById(payload.sub).then((user) => {
-    if (user) {
-      user.token = payload
-      done(null, user)
-    } else {
-      done(null, false)
-    }
-  }).catch((error) => {
-    done(error, false)
-  })
-}))
+// use static serialize and deserialize of model for passport session support
+passport.serializeUser(User.serializeUser());
+passport.deserializeUser(User.deserializeUser());
 
-const register = (req, res, next) => {
-  User.register(new User({ email: req.body.email, role: 'user' }), req.body.password, (err, user) => {
+
+const register = (req, res) => {
+  User.register(new User({
+    email: req.body.email,
+    role: req.body.role || 'user'
+  }), req.body.password, (err, user) => {
     if (err) {
       return res.status(500).send(err.message);
     }
-    // Add user to request so that later middleware can access it
-    req.user = user
-    next()
+    res.status(200).json(user)
   })
 }
 
+const login = (req, res) => {
+  // Set the session role to the user role so we can use it for authorization
+  req.session.role = req.user.role || 'guest' // default to guest if no user or role
+  res.status(200).json(req.user)
+}
+
+// Logout the current user
+const logout = (req, res) => {
+  req.logout()
+  req.session.role = 'guest'
+  res.sendStatus(200)
+}
+
+// Used as middleware to check if the currently logged in user has admin role
 const isAdmin = (req, res, next) => {
-  if (req.user.role && req.user.role === 'admin') {
+  if (req.session.role && req.session.role === 'admin') {
     next()
   } else {
     res.sendStatus(403)
   }
 }
 
-// Create a JWT (user just logged in or registered)
-const signJwtForUser = (req, res) => {
-    // Use JWT to create a signed token
-    const token = JWT.sign(
-      // Payload
-      {
-        sub: req.user._id.toString(),
-        email: req.user.email
-      },
-      // Secret
-      jwtSecret,
-      // Config (may include header values)
-      {
-        algorithm: jwtAlgorithm,
-        expiresIn: jwtExpiresIn
-      }
-    )
-
-    res.json({token: token})
+const isRegisteredUser = (req, res, next) => {
+  if (req.session.role && (req.session.role == 'user' || req.session.role == 'admin')) {
+    next()
+  } else {
+    res.sendStatus(403)
+  }
 }
 
 module.exports = {
   initializePassport: passport.initialize(),
-  requireJwt: passport.authenticate('jwt', { session: false }),
-  login: passport.authenticate('local', { session: false }),
-  register,
-  signJwtForUser,
-  isAdmin
+  passportSession: passport.session(),
+  authenticate: passport.authenticate('local'),
+  login,
+  logout,
+  isAdmin,
+  isRegisteredUser,
+  register
 }

@@ -1,29 +1,51 @@
 // dependencies
 const express = require('express');
-const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
 const cors = require('cors')
+const cookieParser = require('cookie-parser')
+const session = require('express-session')
 
-const { initializePassport, requireJwt } = require('./middleware/auth')
+const {
+  initializePassport,
+  passportSession
+} = require('./middleware/auth')
 
-const app = express();
+const app = express()
+
+const dbConn = 'mongodb://localhost/bookmarks'
 
 // parse json
-app.use(bodyParser.json());
+app.use(express.json())
+app.use(express.urlencoded({
+  extended: false
+}))
+app.use(cookieParser())
+
 
 app.use(initializePassport)
+app.use(passportSession)
+// app.use(aclAuthorize)
 app.use(cors())
+app.use(session({
+  secret: "these are not the droids you're looking for",
+}))
 
 // mongoose
-mongoose.connect('mongodb://dbadmin:dbadmin1@ds125851.mlab.com:25851/bookmarks-coderacademy', (err) => {
+mongoose.connect(dbConn, (err) => {
   if (err) {
-    console.log('Error connecting to database', err);
+    console.log('Error connecting to database', err)
   } else {
-    console.log('Connected to database!');
+    console.log('Connected to database!')
   }
-});
+})
 
+// Use defined routes
 app.use('/auth', require('./routes/auth'))
-app.use('/bookmarks', requireJwt, require('./routes/bookmarks'))
+app.use('/admin', require('./routes/admin'))
+app.use('/bookmarks', require('./routes/bookmarks'))
 
-app.listen(process.env.PORT || 3000, () => console.log('Listening on http://localhost:3000'));
+app.get('/', (req, res) => {
+  res.status(200).send('Bookmark server')
+})
+
+app.listen(process.env.PORT || 3000, () => console.log('Listening on http://localhost:3000'))
